@@ -37,7 +37,11 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources"
+      "resources/models/clips/vocab.txt",
+      "resources/models/clips/vit-b-16.img.int8.onnx",
+      "resources/models/clips/vit-b-16.txt.int8.onnx",
+      "resources/models/ocr",
+      "resources/native/onnxruntime"
     ]
   }
 }

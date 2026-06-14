@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": [
+      "resources/models/clips/vocab.txt",
+      "resources/models/clips/vit-b-16.image.mlpackage",
+      "resources/models/clips/vit-b-16.text.mlpackage"
+    ]
+  }
+}
