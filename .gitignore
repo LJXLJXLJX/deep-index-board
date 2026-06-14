@@ -1,0 +1,88 @@
+# --- General ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+*.swp
+*~
+*.log
+*.tmp
+*.bak
+
+# --- Node.js / Frontend ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+.eslintcache
+.stylelintcache
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+.pnpm-store/
+
+# --- Rust / Tauri ---
+src-tauri/target/
+src-tauri/gen/
+src-tauri/bin/
+src-tauri/*.pdb
+src-tauri/*.exe
+
+# --- Database ---
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+*.sqlitedb
+# Local dump files
+*.sql
+!src-tauri/src/schema.sql
+*.dump
+
+# --- Environment Secrets ---
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# --- Editors ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.sln
+*.user
+*.userossc
+*.sln.docstates
+
+# --- Testing ---
+coverage/
+.nyc_output
+
+# --- OS specific ---
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Custom Ignore ---
+tmp/
+temp/
+
+src-tauri/resources/models/

@@ -1,0 +1,3 @@
+[submodule "src-tauri/resources/models"]
+	path = src-tauri/resources/models
+	url = https://www.modelscope.cn/saljgoe/deep-index-board-models.git
