@@ -62,6 +62,8 @@ objc2-core-ml = { version = "0.2.2", features = ["all"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
