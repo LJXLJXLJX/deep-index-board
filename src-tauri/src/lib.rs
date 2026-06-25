@@ -49,7 +49,9 @@ pub fn run() {
             commands::release_all_inference,
             commands::get_history_semantic,
             commands::set_favorite,
-            commands::unfavorite_all
+            commands::unfavorite_all,
+            commands::save_text_item_copy,
+            commands::overwrite_text_item
         ])
         .setup(|app| {
             // 1. 数据库初始化

@@ -1,4 +1,5 @@
 use rusqlite::Connection;
+use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 
 const SQLITE_FILE_NAME: &str = "clipboard.db";
@@ -71,6 +72,40 @@ pub fn upsert_item(
         |row| row.get(0),
     )
 }
+
+pub fn calculate_hash(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hex::encode(hasher.finalize())
+}
+
+pub fn save_text_copy(conn: &Connection, content: &str) -> rusqlite::Result<HistoryItem> {
+    let hash = calculate_hash(content.as_bytes());
+    let id = upsert_item(conn, content, "text", &hash, 0, None)?;
+    get_item_by_id(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+}
+
+pub fn overwrite_text_item(
+    conn: &Connection,
+    id: i64,
+    content: &str,
+) -> rusqlite::Result<HistoryItem> {
+    let existing = get_item_by_id(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    if existing.r#type != "text" {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+
+    let hash = calculate_hash(content.as_bytes());
+    conn.execute(
+        "UPDATE clipboard
+         SET content = ?1, content_hash = ?2, content_text = NULL, timestamp = CURRENT_TIMESTAMP, mtime = 0
+         WHERE id = ?3",
+        rusqlite::params![content, hash, id],
+    )?;
+    delete_vector(conn, id)?;
+    get_item_by_id(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+}
+
 pub fn update_content_text(conn: &Connection, content: &str, text: &str) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE clipboard SET content_text = ?1 WHERE content = ?2",
@@ -363,7 +398,10 @@ pub fn set_favorite(
 }
 
 pub fn unfavorite_all(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute("UPDATE clipboard SET is_favorite = 0 WHERE is_favorite = 1", [])?;
+    conn.execute(
+        "UPDATE clipboard SET is_favorite = 0 WHERE is_favorite = 1",
+        [],
+    )?;
     Ok(())
 }
 

@@ -156,6 +156,45 @@ pub fn unfavorite_all(state: State<DbState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn save_text_item_copy(
+    app_handle: AppHandle,
+    state: State<DbState>,
+    content: String,
+) -> Result<HistoryItem, String> {
+    if content.is_empty() {
+        return Err("Content is empty".to_string());
+    }
+
+    let item = {
+        let conn = state.conn.lock().unwrap();
+        dbm::save_text_copy(&conn, &content).map_err(|e| e.to_string())?
+    };
+
+    let _ = app_handle.emit("clipboard-updated", &item);
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn overwrite_text_item(
+    app_handle: AppHandle,
+    state: State<DbState>,
+    id: i64,
+    content: String,
+) -> Result<HistoryItem, String> {
+    if content.is_empty() {
+        return Err("Content is empty".to_string());
+    }
+
+    let item = {
+        let conn = state.conn.lock().unwrap();
+        dbm::overwrite_text_item(&conn, id, &content).map_err(|e| e.to_string())?
+    };
+
+    let _ = app_handle.emit("history-item-updated", &item);
+    Ok(item)
+}
+
+#[tauri::command]
 pub async fn paste_item(
     app_handle: AppHandle,
     state: State<'_, DbState>,

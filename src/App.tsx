@@ -10,7 +10,17 @@ function App() {
   const [hoveredItem, setHoveredItem] = useState<HistoryItem | null>(null);
   const [leftWidth, setLeftWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
+  const [previewIsDirty, setPreviewIsDirty] = useState(false);
   const clearHoveredItem = useCallback(() => setHoveredItem(null), []);
+  const handleHoverItem = useCallback(
+    (item: HistoryItem | null) => {
+      setHoveredItem((prev) => {
+        if (previewIsDirty && item?.id !== prev?.id) return prev;
+        return item;
+      });
+    },
+    [previewIsDirty]
+  );
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -83,7 +93,7 @@ function App() {
       {/* 主要工作区：左右分栏 */}
       <div className="main-workspace">
         <div className="left-column" style={{ width: leftWidth }}>
-          <HistoryList onHover={setHoveredItem} onClear={clearHoveredItem} />
+          <HistoryList onHover={handleHoverItem} onClear={clearHoveredItem} />
         </div>
 
         {/* 拖拽手柄 */}
@@ -93,7 +103,11 @@ function App() {
         />
 
         <div className="right-column">
-          <PreviewArea item={hoveredItem} />
+          <PreviewArea
+            item={hoveredItem}
+            onItemSaved={setHoveredItem}
+            onDirtyChange={setPreviewIsDirty}
+          />
         </div>
       </div>
 

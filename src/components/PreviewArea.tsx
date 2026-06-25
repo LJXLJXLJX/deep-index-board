@@ -1,9 +1,12 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { HistoryItem } from "./HistoryList";
 import { ImageLab } from "./ImageLab/ImageLab";
 
 interface PreviewAreaProps {
   item: HistoryItem | null;
+  onItemSaved: (item: HistoryItem) => void;
+  onDirtyChange: (isDirty: boolean) => void;
 }
 
 const isImageFile = (path: string) => {
@@ -14,7 +17,11 @@ const isImageFile = (path: string) => {
   );
 };
 
-export function PreviewArea({ item }: PreviewAreaProps) {
+export function PreviewArea({
+  item,
+  onItemSaved,
+  onDirtyChange,
+}: PreviewAreaProps) {
   if (!item) {
     return (
       <div className="preview-area empty">
@@ -26,7 +33,11 @@ export function PreviewArea({ item }: PreviewAreaProps) {
   return (
     <div className="preview-area">
       {item.type === "text" ? (
-        <TextPreview content={item.content} />
+        <TextPreview
+          item={item}
+          onItemSaved={onItemSaved}
+          onDirtyChange={onDirtyChange}
+        />
       ) : item.type === "image" ||
         (item.type === "file" && isImageFile(item.content)) ? (
         <ImageLab src={convertFileSrc(item.content)} item={item} />
@@ -95,10 +106,131 @@ function FilePreview({ item }: { item: HistoryItem }) {
   );
 }
 
-function TextPreview({ content }: { content: string }) {
+function TextPreview({
+  item,
+  onItemSaved,
+  onDirtyChange,
+}: {
+  item: HistoryItem;
+  onItemSaved: (item: HistoryItem) => void;
+  onDirtyChange: (isDirty: boolean) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(item.content);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(item.content);
+    setIsEditing(false);
+    setSaveError(null);
+    onDirtyChange(false);
+  }, [item.id, item.content, onDirtyChange]);
+
+  useEffect(() => {
+    onDirtyChange(isEditing && draft !== item.content);
+    return () => onDirtyChange(false);
+  }, [draft, isEditing, item.content, onDirtyChange]);
+
+  const isDirty = draft !== item.content;
+  const canSave = isDirty && draft.length > 0 && !isSaving;
+
+  const saveCopy = async () => {
+    if (!canSave) return;
+    try {
+      setIsSaving(true);
+      setSaveError(null);
+      const savedItem = await invoke<HistoryItem>("save_text_item_copy", {
+        content: draft,
+      });
+      onItemSaved(savedItem);
+      setIsEditing(false);
+      onDirtyChange(false);
+    } catch (error) {
+      console.error("Failed to save text copy:", error);
+      setSaveError(String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const overwrite = async () => {
+    if (!canSave) return;
+    try {
+      setIsSaving(true);
+      setSaveError(null);
+      const savedItem = await invoke<HistoryItem>("overwrite_text_item", {
+        id: item.id,
+        content: draft,
+      });
+      onItemSaved(savedItem);
+      setIsEditing(false);
+      onDirtyChange(false);
+    } catch (error) {
+      console.error("Failed to overwrite text item:", error);
+      setSaveError(String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setDraft(item.content);
+    setIsEditing(false);
+    setSaveError(null);
+    onDirtyChange(false);
+  };
+
   return (
     <div className="text-preview">
-      <pre>{content}</pre>
+      <div className="text-preview-toolbar">
+        {isEditing ? (
+          <>
+            <button
+              className="text-preview-action secondary"
+              onClick={cancelEdit}
+              disabled={isSaving}
+            >
+              取消
+            </button>
+            <button
+              className="text-preview-action"
+              onClick={saveCopy}
+              disabled={!canSave}
+            >
+              另存新条目
+            </button>
+            <button
+              className="text-preview-action"
+              onClick={overwrite}
+              disabled={!canSave}
+            >
+              覆盖保存
+            </button>
+          </>
+        ) : (
+          <button
+            className="text-preview-action"
+            onClick={() => setIsEditing(true)}
+          >
+            编辑
+          </button>
+        )}
+      </div>
+      {isEditing ? (
+        <textarea
+          className="text-preview-editor"
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setSaveError(null);
+          }}
+          spellCheck={false}
+        />
+      ) : (
+        <pre>{item.content}</pre>
+      )}
+      {saveError && <div className="text-preview-error">{saveError}</div>}
     </div>
   );
 }
