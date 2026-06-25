@@ -401,9 +401,7 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
       <div className="history-item-row">
         <div className="history-item-main">
           {item.type === "text" ? (
-            <span className="item-content" style={{ flex: 1 }}>
-              {item.content}
-            </span>
+            <span className="item-content">{item.content}</span>
           ) : item.type === "image" ||
             (item.type === "file" && isImageFile(item.content)) ? (
             <div className="item-image-wrapper">
@@ -440,8 +438,8 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
           )}
         </div>
         <div className="history-item-side">
-          {renderItemActions(item)}
           {renderItemMeta(item)}
+          {renderItemActions(item)}
         </div>
       </div>
     </div>
