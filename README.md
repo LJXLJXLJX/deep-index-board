@@ -49,6 +49,30 @@ After launch, the app listens to clipboard changes in the background.
 
 In the panel, you can search, preview, favorite, edit, delete, and select clipboard history items. The top-level clear action removes non-favorited history items while keeping the favorites section intact.
 
+## macOS Unsigned App Notes
+
+This project is currently distributed as a plain `.app` bundle, not a signed and notarized installer. Only run it if you trust the source.
+
+If macOS says the app is from an unidentified developer, first try:
+
+1. Move `deep-index-board.app` to `/Applications`.
+2. Right-click the app and choose `Open`.
+3. If macOS shows an `Open Anyway` option in `System Settings` -> `Privacy & Security`, use it.
+
+If macOS still reports that the app is damaged or cannot be opened, remove the quarantine attribute:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/deep-index-board.app
+```
+
+If you keep the app somewhere else, replace the path with the actual `.app` path:
+
+```bash
+xattr -dr com.apple.quarantine "/path/to/deep-index-board.app"
+```
+
+The app also needs Accessibility permission for paste automation and focus-related behavior. Enable it in `System Settings` -> `Privacy & Security` -> `Accessibility`. If paste does not work after granting permission, remove the app from the Accessibility list, add it again, and restart the app.
+
 ## License
 
 MIT License. You may use, modify, and distribute this project freely, as long as the copyright and license notice are preserved.
