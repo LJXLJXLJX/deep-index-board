@@ -13,9 +13,10 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app_handle, event| match event.id.as_ref() {
-            "quit" => app_handle.exit(0),
-            _ => {}
+        .on_menu_event(|app_handle, event| {
+            if event.id.as_ref() == "quit" {
+                app_handle.exit(0);
+            }
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {

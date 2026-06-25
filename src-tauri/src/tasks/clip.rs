@@ -3,7 +3,7 @@ use crate::inference::manager::SessionManager;
 use crate::inference::traits::{InferenceInput, InferenceOutput};
 #[cfg(target_os = "windows")]
 use ort::{session::Session, value::Tensor};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(target_os = "windows")]
 use std::sync::{Mutex, OnceLock};
 
@@ -21,7 +21,7 @@ static CLIP_TEXT_SESSION: OnceLock<Mutex<Option<CachedOnnxSession>>> = OnceLock:
 pub fn run_clip_image_embedding(
     manager: &SessionManager,
     model_path: PathBuf,
-    image_path: &PathBuf,
+    image_path: &Path,
 ) -> Result<Vec<f32>, String> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -44,18 +44,14 @@ pub fn run_clip_image_embedding(
     {
         let session =
             manager.get_or_load_session("clip-image-vit-b-16", model_path, Some("CoreML"))?;
-        let input = InferenceInput::Image(image_path.clone());
+        let input = InferenceInput::Image(image_path.to_path_buf());
 
         let output = session.predict(input)?;
-        match output {
-            InferenceOutput::Tensors(mut tensors) => {
-                if let Some((data, _)) = tensors.pop() {
-                    Ok(data)
-                } else {
-                    Err("No output tensor".into())
-                }
-            }
-            _ => Err("Unexpected output type".into()),
+        let InferenceOutput::Tensors(mut tensors) = output;
+        if let Some((data, _)) = tensors.pop() {
+            Ok(data)
+        } else {
+            Err("No output tensor".into())
         }
     }
 }
@@ -63,7 +59,7 @@ pub fn run_clip_image_embedding(
 pub fn run_clip_text_embedding(
     manager: &SessionManager,
     model_path: PathBuf,
-    vocab_path: &PathBuf,
+    vocab_path: &Path,
     text: &str,
 ) -> Result<Vec<f32>, String> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -95,16 +91,11 @@ pub fn run_clip_text_embedding(
         // 3. 推理
         let input = InferenceInput::Tensor(input_ids, vec![1, 52]);
         let output = session.predict(input)?;
-
-        match output {
-            InferenceOutput::Tensors(mut tensors) => {
-                if let Some((data, _)) = tensors.pop() {
-                    Ok(data)
-                } else {
-                    Err("No output tensor".into())
-                }
-            }
-            _ => Err("Unexpected output type".into()),
+        let InferenceOutput::Tensors(mut tensors) = output;
+        if let Some((data, _)) = tensors.pop() {
+            Ok(data)
+        } else {
+            Err("No output tensor".into())
         }
     }
 }
@@ -112,7 +103,9 @@ pub fn run_clip_text_embedding(
 #[cfg(target_os = "windows")]
 fn run_clip_image_onnx(model_path: PathBuf, pixels: Vec<f32>) -> Result<Vec<f32>, String> {
     let cache = CLIP_IMAGE_SESSION.get_or_init(|| Mutex::new(None));
-    let mut guard = cache.lock().map_err(|_| "CLIP image session lock poisoned".to_string())?;
+    let mut guard = cache
+        .lock()
+        .map_err(|_| "CLIP image session lock poisoned".to_string())?;
     let session = get_or_load_onnx_session(&mut guard, model_path)?;
 
     let input_tensor = Tensor::from_array((vec![1, 3, 224, 224], pixels.into_boxed_slice()))
@@ -127,7 +120,9 @@ fn run_clip_image_onnx(model_path: PathBuf, pixels: Vec<f32>) -> Result<Vec<f32>
 #[cfg(target_os = "windows")]
 fn run_clip_text_onnx(model_path: PathBuf, input_ids: Vec<i64>) -> Result<Vec<f32>, String> {
     let cache = CLIP_TEXT_SESSION.get_or_init(|| Mutex::new(None));
-    let mut guard = cache.lock().map_err(|_| "CLIP text session lock poisoned".to_string())?;
+    let mut guard = cache
+        .lock()
+        .map_err(|_| "CLIP text session lock poisoned".to_string())?;
     let session = get_or_load_onnx_session(&mut guard, model_path)?;
 
     let input_tensor = Tensor::from_array((vec![1, 52], input_ids.into_boxed_slice()))
@@ -153,8 +148,16 @@ fn get_or_load_onnx_session(
         let session = Session::builder()
             .map_err(|e| format!("Failed to create CLIP ONNX session builder: {e}"))?
             .commit_from_file(&model_path)
-            .map_err(|e| format!("Failed to load CLIP ONNX model {}: {e}", model_path.display()))?;
-        *cache = Some(CachedOnnxSession { model_path, session });
+            .map_err(|e| {
+                format!(
+                    "Failed to load CLIP ONNX model {}: {e}",
+                    model_path.display()
+                )
+            })?;
+        *cache = Some(CachedOnnxSession {
+            model_path,
+            session,
+        });
     }
 
     cache
@@ -175,7 +178,7 @@ fn extract_first_f32_output(outputs: ort::session::SessionOutputs<'_>) -> Result
     Ok(data.to_vec())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(test, target_os = "macos"))]
 pub fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f32 {
     let dot_product: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum();
     let norm_v1: f32 = v1.iter().map(|a| a * a).sum::<f32>().sqrt();
@@ -281,7 +284,7 @@ mod tests {
             let start = std::time::Instant::now();
             for _ in 0..50 {
                 let _ = session
-                    .predict(crate::inference::InferenceInput::NamedTensor(
+                    .predict(InferenceInput::NamedTensor(
                         "image".to_string(),
                         img_vec.clone(), // Clone to simulate fresh input
                         vec![1, 3, 224, 224],

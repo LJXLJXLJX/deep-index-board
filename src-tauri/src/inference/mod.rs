@@ -11,8 +11,6 @@ pub mod utils;
 #[cfg(target_os = "macos")]
 pub use coreml::CoreMLBackend;
 pub use manager::SessionManager;
-#[cfg(target_os = "macos")]
-pub use traits::{InferenceInput, InferenceOutput};
 
 use std::sync::Arc;
 

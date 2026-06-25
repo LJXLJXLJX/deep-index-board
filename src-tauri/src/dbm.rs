@@ -1,5 +1,4 @@
 use rusqlite::Connection;
-use sqlite_vec;
 use std::sync::Mutex;
 
 const SQLITE_FILE_NAME: &str = "clipboard.db";
@@ -17,9 +16,15 @@ pub fn connect_to_main_clipboard_db(app_dir: std::path::PathBuf) -> Connection {
 
     // 加载 sqlite-vec 扩展
     unsafe {
-        let _ = rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
-        )));
+        let extension = std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut rusqlite::ffi::sqlite3,
+                *mut *mut i8,
+                *const rusqlite::ffi::sqlite3_api_routines,
+            ) -> i32,
+        >(sqlite_vec::sqlite3_vec_init as *const ());
+        let _ = rusqlite::ffi::sqlite3_auto_extension(Some(extension));
     }
 
     let conn = Connection::open(db_path).expect("failed to open database");
@@ -83,7 +88,7 @@ pub fn upsert_vector(conn: &Connection, id: i64, embedding: &[f32]) -> rusqlite:
     let embedding_blob = unsafe {
         std::slice::from_raw_parts(
             embedding.as_ptr() as *const u8,
-            embedding.len() * std::mem::size_of::<f32>(),
+            std::mem::size_of_val(embedding),
         )
     };
 
@@ -241,7 +246,7 @@ pub fn get_history_semantic(
     let embedding_blob = unsafe {
         std::slice::from_raw_parts(
             embedding.as_ptr() as *const u8,
-            embedding.len() * std::mem::size_of::<f32>(),
+            std::mem::size_of_val(embedding),
         )
     };
 

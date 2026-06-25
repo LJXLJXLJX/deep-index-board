@@ -182,7 +182,7 @@ fn extract_text_preview(path: &Path) -> Option<String> {
     // 工业级防御：如果在前 1KB 数据中发现了 null 字节 (\0)，则判定为二进制文件
     // 即使它的后缀是 .txt，我们也不提取预览内容
     let check_size = std::cmp::min(buffer.len(), 1024);
-    if buffer[..check_size].iter().any(|&b| b == 0) {
+    if buffer[..check_size].contains(&0) {
         return None;
     }
 
@@ -303,6 +303,7 @@ fn process_clipboard<R: Runtime>(app_handle: &AppHandle<R>, clipboard: &mut Clip
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn process_clipboard_image<R: Runtime>(app_handle: &AppHandle<R>, png_bytes: &[u8]) {
     let db = app_handle.state::<DbState>();
     let conn = db.conn.lock().unwrap();
@@ -346,11 +347,11 @@ fn process_image_data<R: Runtime>(
     let hash = calculate_hash(bytes);
 
     // 先检查哈希是否存在
-    if let Ok(Some(existing_path)) = get_path_by_hash(&conn, &hash) {
+    if let Ok(Some(existing_path)) = get_path_by_hash(conn, &hash) {
         // 已存在，保持原逻辑：更新时间戳
         let source_app = crate::platform::get_frontmost_app();
         if let Err(e) = upsert_item(
-            &conn,
+            conn,
             &existing_path,
             "image",
             &hash,
@@ -358,7 +359,7 @@ fn process_image_data<R: Runtime>(
             source_app.as_deref(),
         ) {
             eprintln!("Failed to update duplicate image timestamp: {}", e);
-        } else if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
+        } else if let Ok(items) = crate::dbm::get_history(conn, None, 1, None) {
             if let Some(item) = items.first() {
                 let item_to_emit = item.clone();
                 let _ = app_handle.emit("clipboard-updated", &item_to_emit);
@@ -388,7 +389,7 @@ fn process_image_data<R: Runtime>(
             let db_path = file_path.to_string_lossy().to_string();
             let source_app = crate::platform::get_frontmost_app();
             if let Err(e) = upsert_item(
-                &conn,
+                conn,
                 &db_path,
                 "image",
                 &hash,
@@ -396,7 +397,7 @@ fn process_image_data<R: Runtime>(
                 source_app.as_deref(),
             ) {
                 eprintln!("Failed to save image path to DB: {}", e);
-            } else if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
+            } else if let Ok(items) = crate::dbm::get_history(conn, None, 1, None) {
                 if let Some(item) = items.first() {
                     let item_to_emit = item.clone();
                     let _ = app_handle.emit("clipboard-updated", &item_to_emit);

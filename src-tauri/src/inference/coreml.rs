@@ -8,7 +8,7 @@ use objc2_core_ml::{
     MLComputeUnits, MLFeatureProvider, MLModel, MLModelConfiguration, MLMultiArray,
     MLMultiArrayDataType,
 };
-use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSURL};
+use objc2_foundation::{NSArray, NSNumber, NSString, NSURL};
 use std::path::PathBuf;
 
 #[cfg(target_os = "macos")]
@@ -20,11 +20,7 @@ impl InferenceBackend for CoreMLBackend {
         "CoreML"
     }
 
-    fn load_session(
-        &self,
-        model_path: PathBuf,
-        model_id: String,
-    ) -> Result<Box<dyn InferenceSession>, String> {
+    fn load_session(&self, model_path: PathBuf) -> Result<Box<dyn InferenceSession>, String> {
         objc2::rc::autoreleasepool(|_| {
             let path_str = model_path.to_str().ok_or("Invalid path")?;
             let path_ns = NSString::from_str(path_str);
@@ -35,6 +31,7 @@ impl InferenceBackend for CoreMLBackend {
 
             let mut model_url = url;
             if path_str.ends_with(".mlpackage") {
+                #[allow(deprecated)]
                 let compiled_url = unsafe { MLModel::compileModelAtURL_error(&model_url) }
                     .map_err(|e| format!("Compile Error: {}", e))?;
                 model_url = compiled_url;
@@ -45,7 +42,6 @@ impl InferenceBackend for CoreMLBackend {
                     .map_err(|e| format!("Load Error: {}", e))?;
 
             Ok(Box::new(CoreMLSession {
-                model_id,
                 _model: model,
                 model_path,
                 simulated_memory: 150 * 1024 * 1024,
@@ -55,7 +51,6 @@ impl InferenceBackend for CoreMLBackend {
 }
 
 pub struct CoreMLSession {
-    model_id: String,
     #[allow(dead_code)]
     model_path: PathBuf,
     _model: Retained<MLModel>,
@@ -66,10 +61,6 @@ unsafe impl Send for CoreMLSession {}
 unsafe impl Sync for CoreMLSession {}
 
 impl InferenceSession for CoreMLSession {
-    fn model_id(&self) -> &str {
-        &self.model_id
-    }
-
     fn predict(&self, input: InferenceInput) -> Result<InferenceOutput, String> {
         objc2::rc::autoreleasepool(|_| {
             let (input_name, data, shape) = match input {
@@ -79,8 +70,8 @@ impl InferenceSession for CoreMLSession {
                     ("image", pixels, vec![1, 3, 224, 224])
                 }
                 InferenceInput::Tensor(data, shape) => ("text", data, shape),
+                #[cfg(test)]
                 InferenceInput::NamedTensor(ref name, data, shape) => (name.as_str(), data, shape),
-                _ => return Err("Unsupported input".into()),
             };
 
             unsafe {

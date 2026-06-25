@@ -84,9 +84,7 @@ impl SessionManager {
 
         // 实际加载模型：此时全局的 sessions Map 读/写锁已经释放
         // 其他线程可以并发获取已经加载好的其他模型
-        let new_session: Arc<dyn InferenceSession> = backend
-            .load_session(model_path, model_id.to_string())?
-            .into();
+        let new_session: Arc<dyn InferenceSession> = backend.load_session(model_path)?.into();
         *inner = Some(Arc::clone(&new_session));
 
         Ok(new_session)

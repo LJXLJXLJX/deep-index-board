@@ -10,6 +10,7 @@ mod tests {
     #[test]
     fn test_translate_dummy() {
         // 后续对接模型后再实现真实测试
-        assert!(true);
+        let result = super::run_translate("hello".to_string(), "zh".to_string());
+        assert!(result.is_ok());
     }
 }

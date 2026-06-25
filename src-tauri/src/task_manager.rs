@@ -98,15 +98,10 @@ impl HeavyWorkManager {
 
                 // 调度逻辑：只要线程池未满，就按优先级分发任务
                 while pool.active_count() < pool.max_count() {
-                    let task = if let Some(t) = high_queue.pop_front() {
-                        Some(t)
-                    } else if let Some(t) = normal_queue.pop_front() {
-                        Some(t)
-                    } else if let Some(t) = low_queue.pop_front() {
-                        Some(t)
-                    } else {
-                        None
-                    };
+                    let task = high_queue
+                        .pop_front()
+                        .or_else(|| normal_queue.pop_front())
+                        .or_else(|| low_queue.pop_front());
 
                     if let Some(task) = task {
                         let sm = session_manager.clone();
@@ -116,6 +111,9 @@ impl HeavyWorkManager {
                                 model_root,
                                 callback,
                             } => {
+                                #[cfg(not(target_os = "windows"))]
+                                let _ = model_root;
+
                                 #[cfg(target_os = "macos")]
                                 let res = crate::tasks::ocr_macos::run_native_ocr(&image_path);
 

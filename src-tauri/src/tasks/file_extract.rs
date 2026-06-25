@@ -11,6 +11,7 @@ pub fn run_file_extract(file_path: PathBuf) -> Result<String, String> {
 mod tests {
     #[test]
     fn test_file_extract_placeholder() {
-        assert!(true);
+        let result = super::run_file_extract("sample.txt".into());
+        assert!(result.is_ok());
     }
 }
