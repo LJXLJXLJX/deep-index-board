@@ -86,3 +86,5 @@ tmp/
 temp/
 
 src-tauri/resources/models/
+
+.codebase-memory/

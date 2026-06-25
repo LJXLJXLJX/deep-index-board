@@ -28,7 +28,10 @@ pub fn clear_history(app_handle: AppHandle, state: State<DbState>) -> Result<(),
         dbm::clear_all_history(&conn).map_err(|e| e.to_string())?;
     }
 
-    let app_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
     let images_dir = dbm::get_images_dir(&app_dir);
     if images_dir.exists() {
         std::fs::remove_dir_all(&images_dir).map_err(|e| e.to_string())?;
@@ -45,8 +48,7 @@ pub fn start_window_dragging(app_handle: AppHandle) -> Result<(), String> {
         .get_webview_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
 
-    #[cfg(target_os = "windows")]
-    crate::utils::restore_window_activation(&window).map_err(|e| e.to_string())?;
+    crate::platform::restore_window_activation(&window).map_err(|e| e.to_string())?;
 
     window.start_dragging().map_err(|e| e.to_string())
 }
@@ -57,8 +59,7 @@ pub fn prepare_window_dragging(app_handle: AppHandle) -> Result<(), String> {
         .get_webview_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
 
-    #[cfg(target_os = "windows")]
-    crate::utils::restore_window_activation(&window).map_err(|e| e.to_string())?;
+    crate::platform::restore_window_activation(&window).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -139,7 +140,7 @@ pub async fn paste_item(
 
     if item.r#type == "text" {
         clipboard
-            .set_text(item.content)
+            .set_text(item.content.clone())
             .map_err(|e| e.to_string())?;
     } else if item.r#type == "image" {
         let img = image::open(&item.content).map_err(|e| e.to_string())?;
@@ -152,130 +153,21 @@ pub async fn paste_item(
         };
         clipboard.set_image(image_data).map_err(|e| e.to_string())?;
     } else if item.r#type == "file" || item.r#type == "directory" {
-        #[cfg(target_os = "macos")]
-        {
-            use objc2_app_kit::NSPasteboard;
-            use objc2_foundation::{NSArray, NSString};
-            unsafe {
-                let pb = NSPasteboard::generalPasteboard();
-                pb.clearContents();
-                let ns_str = NSString::from_str(&item.content);
-                let array = NSArray::from_id_slice(&[ns_str]);
-                let filenames_type = NSString::from_str("NSFilenamesPboardType");
-                pb.setPropertyList_forType(&array, &filenames_type);
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            // 其他平台暂时回退到路径文本，因为 arboard 尚未原生支持文件列表
-            clipboard
-                .set_text(item.content)
-                .map_err(|e| e.to_string())?;
-        }
+        crate::platform::write_file_path_to_clipboard(&mut clipboard, &item.content)?;
     }
 
     // 3. 隐藏窗口以回归焦点
     if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.hide();
-    }
-    #[cfg(target_os = "macos")]
-    let _ = app_handle.hide();
-
-    #[cfg(target_os = "windows")]
-    {
-        // Give Windows a short moment to return focus to the previous app
-        // before sending Ctrl+V.
-        std::thread::sleep(std::time::Duration::from_millis(80));
-        send_windows_paste_shortcut();
+        crate::platform::hide_quick_window(&window);
     }
 
-    // 5. 模拟按下 Cmd+V (macOS)
-    #[cfg(target_os = "macos")]
-    {
-        use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGKeyCode};
-        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-        use std::time::{Duration, Instant};
-
-        // 1. 获取主窗口并强制隐藏
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.hide();
-        }
-        let _ = app_handle.hide();
-
-        // 2. 动态等待：轮询直到应用不再处于焦点状态，或超过 500ms
-        // 这比写死 sleep 更科学，能适应不同性能的机器
-        let start = Instant::now();
-        while start.elapsed() < Duration::from_millis(500) {
-            let is_focused = app_handle
-                .get_webview_window("main")
-                .map(|w| w.is_focused().unwrap_or(false))
-                .unwrap_or(false);
-
-            if !is_focused {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-
-        // 3. 额外部署一个极短的缓冲（让 OS 完成最后的上下文切换）
-        std::thread::sleep(Duration::from_millis(50));
-
-        // 4. 使用 Core Graphics 发送原生键盘事件
-        if let Ok(source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
-            let v_key = 9 as CGKeyCode; // 'V' 键
-
-            // Cmd + V Down
-            if let Ok(event_down) = CGEvent::new_keyboard_event(source.clone(), v_key, true) {
-                event_down.set_flags(CGEventFlags::CGEventFlagCommand);
-                event_down.post(CGEventTapLocation::HID);
-            }
-
-            // Cmd + V Up
-            if let Ok(event_up) = CGEvent::new_keyboard_event(source, v_key, false) {
-                // 松开时不需要 MaskCommand
-                event_up.post(CGEventTapLocation::HID);
-            }
-        }
-    }
+    crate::platform::paste_clipboard_item(
+        &app_handle,
+        &item.r#type,
+        (item.r#type == "text").then_some(item.content.as_str()),
+    );
 
     Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn send_windows_paste_shortcut() {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CONTROL, VK_V,
-    };
-
-    fn keyboard_input(vk: u16, key_up: bool) -> INPUT {
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: vk,
-                    wScan: 0,
-                    dwFlags: if key_up { KEYEVENTF_KEYUP } else { 0 },
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        }
-    }
-
-    let inputs = [
-        keyboard_input(VK_CONTROL, false),
-        keyboard_input(VK_V, false),
-        keyboard_input(VK_V, true),
-        keyboard_input(VK_CONTROL, true),
-    ];
-
-    unsafe {
-        let _ = SendInput(
-            inputs.len() as u32,
-            inputs.as_ptr(),
-            std::mem::size_of::<INPUT>() as i32,
-        );
-    }
 }
 
 #[tauri::command]

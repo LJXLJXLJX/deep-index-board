@@ -7,6 +7,7 @@ mod clipboard;
 mod commands;
 mod dbm;
 mod inference;
+mod platform;
 mod setup;
 mod task_manager;
 mod tasks;

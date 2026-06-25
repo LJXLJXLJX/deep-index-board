@@ -1,17 +1,14 @@
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::dbm::update_content_text;
 #[cfg(target_os = "macos")]
 use crate::dbm::{clear_content_text, delete_vector, get_item_by_hash};
 use crate::dbm::{get_path_by_hash, upsert_item, DbState};
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-use crate::dbm::update_content_text;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use crate::task_manager::{HeavyTask, HeavyWorkManager, TaskPriority};
 use arboard::Clipboard;
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
-
-#[cfg(target_os = "macos")]
-use objc2_app_kit::NSPasteboard;
 
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -20,10 +17,7 @@ use std::path::Path;
 fn resolve_ocr_model_root<R: Runtime>(app_handle: &AppHandle<R>) -> Option<std::path::PathBuf> {
     app_handle
         .path()
-        .resolve(
-            "resources/models/ocr",
-            tauri::path::BaseDirectory::Resource,
-        )
+        .resolve("resources/models/ocr", tauri::path::BaseDirectory::Resource)
         .ok()
 }
 
@@ -64,7 +58,11 @@ fn submit_ocr_task<R: Runtime>(
     };
 
     if let Err(err) = manager.execute(task, TaskPriority::Normal) {
-        log::error!("Failed to submit OCR task for {}: {}", db_path_for_submit_log, err);
+        log::error!(
+            "Failed to submit OCR task for {}: {}",
+            db_path_for_submit_log,
+            err
+        );
     }
 }
 
@@ -74,11 +72,10 @@ pub fn start_monitoring<R: Runtime>(app_handle: AppHandle<R>) {
 
         #[cfg(target_os = "macos")]
         {
-            let pb = unsafe { NSPasteboard::generalPasteboard() };
-            let mut last_count = unsafe { pb.changeCount() };
+            let mut last_count = crate::platform::clipboard_change_count();
 
             loop {
-                let current_count = unsafe { pb.changeCount() };
+                let current_count = crate::platform::clipboard_change_count();
                 if current_count != last_count {
                     last_count = current_count;
                     process_clipboard(&app_handle, &mut clipboard);
@@ -210,77 +207,60 @@ fn process_clipboard<R: Runtime>(app_handle: &AppHandle<R>, clipboard: &mut Clip
     // 0. 尝试获取文件 (macOS 专有)
     #[cfg(target_os = "macos")]
     {
-        use objc2::msg_send;
-        use objc2_foundation::{NSArray, NSString};
-        let pb = unsafe { NSPasteboard::generalPasteboard() };
-        let filenames_type = NSString::from_str("NSFilenamesPboardType");
-
-        let plist = pb.propertyListForType(&filenames_type);
-        if let Some(plist_obj) = plist {
-            // 安全地获取内部指针并转换为 NSArray
-            let array_ptr = objc2::rc::Id::as_ptr(&plist_obj) as *const NSArray<NSString>;
-            let array = unsafe { &*array_ptr };
-
+        let file_paths = crate::platform::read_clipboard_file_paths();
+        if !file_paths.is_empty() {
             let mut captured_files = false;
-            let count = array.count();
-            for i in 0..count {
-                // objectAtIndex 在消息发送时返回一个对象指针
-                let ns_str_ptr: *const NSString = unsafe { msg_send![array, objectAtIndex: i] };
-                if !ns_str_ptr.is_null() {
-                    let ns_str = unsafe { &*ns_str_ptr };
-                    let path_str = ns_str.to_string();
-                    let path = Path::new(&path_str);
+            for path_str in file_paths {
+                let path = Path::new(&path_str);
 
-                    if path.exists() {
-                        captured_files = true;
-                        let item_type = if path.is_dir() { "directory" } else { "file" };
+                if path.exists() {
+                    captured_files = true;
+                    let item_type = if path.is_dir() { "directory" } else { "file" };
 
-                        // 采取路径唯一性策略：同一路径永远对应同一个 ID
-                        let hash = calculate_hash(path_str.as_bytes());
+                    // 采取路径唯一性策略：同一路径永远对应同一个 ID
+                    let hash = calculate_hash(path_str.as_bytes());
 
-                        // 变更检测：如果是已存在的路径，且文件已被修改，则清除旧的预览/向量以触发更新
-                        if let Ok(Some(existing)) = get_item_by_hash(&conn, &hash) {
-                            if let Ok(meta) = path.metadata() {
-                                use std::os::unix::fs::MetadataExt;
-                                let _mtime = meta.mtime();
+                    // 变更检测：如果是已存在的路径，且文件已被修改，则清除旧的预览/向量以触发更新
+                    if let Ok(Some(existing)) = get_item_by_hash(&conn, &hash) {
+                        if let Ok(meta) = path.metadata() {
+                            use std::os::unix::fs::MetadataExt;
+                            let _mtime = meta.mtime();
 
-                                // 简单解析原有的 timestamp 进行大致判定
-                                // 只要磁盘上的 mtime 显著新于记录的时间（考虑到时区，这里保留一定宽容度）
-                                // 或者为了稳妥，直接强制清除旧解析结果（因为用户提到“覆盖之前的”）
-                                let _ = clear_content_text(&conn, existing.id);
-                                let _ = delete_vector(&conn, existing.id);
-                            }
+                            // 简单解析原有的 timestamp 进行大致判定
+                            // 只要磁盘上的 mtime 显著新于记录的时间（考虑到时区，这里保留一定宽容度）
+                            // 或者为了稳妥，直接强制清除旧解析结果（因为用户提到“覆盖之前的”）
+                            let _ = clear_content_text(&conn, existing.id);
+                            let _ = delete_vector(&conn, existing.id);
                         }
+                    }
 
-                        let mtime = crate::utils::get_mtime(path);
-                        let source_app = crate::utils::get_frontmost_app();
-                        if let Err(e) = upsert_item(
-                            &conn,
-                            &path_str,
-                            item_type,
-                            &hash,
-                            mtime,
-                            source_app.as_deref(),
-                        ) {
-                            eprintln!("Failed to save file path: {}", e);
-                        } else {
-                            // 无论哪种文件，尝试获取最新的历史记录项以更新 content_text
-                            if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
-                                if let Some(item) = items.first() {
-                                    if item.content_text.is_none() {
-                                        if is_image_file(path) {
-                                            // 对图片文件触发 OCR
-                                            submit_ocr_task(&app_handle, path_str, item.clone());
-                                        } else if is_text_file(path) {
-                                            // 对文本文件直接提取
-                                            if let Some(text) = extract_text_preview(path) {
-                                                let _ =
-                                                    update_content_text(&conn, &path_str, &text);
-                                                let mut updated_item = item.clone();
-                                                updated_item.content_text = Some(text);
-                                                let _ = app_handle
-                                                    .emit("history-item-updated", updated_item);
-                                            }
+                    let mtime = crate::utils::get_mtime(path);
+                    let source_app = crate::platform::get_frontmost_app();
+                    if let Err(e) = upsert_item(
+                        &conn,
+                        &path_str,
+                        item_type,
+                        &hash,
+                        mtime,
+                        source_app.as_deref(),
+                    ) {
+                        eprintln!("Failed to save file path: {}", e);
+                    } else {
+                        // 无论哪种文件，尝试获取最新的历史记录项以更新 content_text
+                        if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
+                            if let Some(item) = items.first() {
+                                if item.content_text.is_none() {
+                                    if is_image_file(path) {
+                                        // 对图片文件触发 OCR
+                                        submit_ocr_task(app_handle, path_str.clone(), item.clone());
+                                    } else if is_text_file(path) {
+                                        // 对文本文件直接提取
+                                        if let Some(text) = extract_text_preview(path) {
+                                            let _ = update_content_text(&conn, &path_str, &text);
+                                            let mut updated_item = item.clone();
+                                            updated_item.content_text = Some(text);
+                                            let _ = app_handle
+                                                .emit("history-item-updated", updated_item);
                                         }
                                     }
                                 }
@@ -305,7 +285,7 @@ fn process_clipboard<R: Runtime>(app_handle: &AppHandle<R>, clipboard: &mut Clip
     if let Ok(text) = clipboard.get_text() {
         if !text.is_empty() {
             let hash = calculate_hash(text.as_bytes());
-            let source_app = crate::utils::get_frontmost_app();
+            let source_app = crate::platform::get_frontmost_app();
             if let Err(e) = upsert_item(&conn, &text, "text", &hash, 0, source_app.as_deref()) {
                 eprintln!("Failed to save clipboard text: {}", e);
             } else if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
@@ -368,7 +348,7 @@ fn process_image_data<R: Runtime>(
     // 先检查哈希是否存在
     if let Ok(Some(existing_path)) = get_path_by_hash(&conn, &hash) {
         // 已存在，保持原逻辑：更新时间戳
-        let source_app = crate::utils::get_frontmost_app();
+        let source_app = crate::platform::get_frontmost_app();
         if let Err(e) = upsert_item(
             &conn,
             &existing_path,
@@ -406,7 +386,7 @@ fn process_image_data<R: Runtime>(
             eprintln!("Failed to save image file: {}", e);
         } else {
             let db_path = file_path.to_string_lossy().to_string();
-            let source_app = crate::utils::get_frontmost_app();
+            let source_app = crate::platform::get_frontmost_app();
             if let Err(e) = upsert_item(
                 &conn,
                 &db_path,
