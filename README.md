@@ -2,7 +2,22 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Deep Index Board is a clipboard history tool for everyday use. It records copied content in the background and provides quick access, preview, search, favorites, text editing, and paste-again workflows.
+Clipboard history for people who tweak before they paste.
+
+Deep Index Board is a desktop clipboard history app with an editable preview pane. It lets you find an old clipboard item, adjust text before pasting, save the edited version as a new item, or overwrite the original.
+
+It also supports favorites, image preview, OCR, and semantic image search.
+
+## Why
+
+Most clipboard managers are optimized for retrieving exact past items. Deep Index Board is optimized for the moment after retrieval: when the content is almost right, but needs a small change before you paste it.
+
+## Highlights
+
+- Editable text preview: save edits as a new item or overwrite the current item
+- Favorites section above history, with collapse, resize, and unfavorite-all actions
+- Image preview, OCR, and semantic image search
+- Per-item delete and clear-non-favorites workflows
 
 ## Features
 
@@ -39,6 +54,12 @@ Deep Index Board is a clipboard history tool for everyday use. It records copied
 - Supports resizing the window and dragging the window position
 - Supports toggling launch at startup
 - Shows current memory usage in the status bar
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/main-workflow.png" alt="Deep Index Board main workflow" width="860">
+</p>
 
 ## Usage
 
