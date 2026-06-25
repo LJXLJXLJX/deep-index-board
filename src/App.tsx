@@ -49,7 +49,7 @@ function App() {
 
   useEffect(() => {
     // 监听全局更新，如果当前预览的项被更新了（如 OCR 完成），同步刷新预览
-    const unlisten = listen<HistoryItem>("history-item-updated", (event) => {
+    const unlistenUpdate = listen<HistoryItem>("history-item-updated", (event) => {
       const updatedItem = event.payload;
       setHoveredItem((prev) => {
         if (prev && prev.id === updatedItem.id) {
@@ -59,8 +59,14 @@ function App() {
       });
     });
 
+    const unlistenDelete = listen<number>("history-item-deleted", (event) => {
+      const deletedId = event.payload;
+      setHoveredItem((prev) => (prev?.id === deletedId ? null : prev));
+    });
+
     return () => {
-      unlisten.then((f) => f());
+      unlistenUpdate.then((f) => f());
+      unlistenDelete.then((f) => f());
     };
   }, []);
 

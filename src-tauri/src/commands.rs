@@ -195,6 +195,30 @@ pub fn overwrite_text_item(
 }
 
 #[tauri::command]
+pub fn delete_item(app_handle: AppHandle, state: State<DbState>, id: i64) -> Result<(), String> {
+    let item = {
+        let conn = state.conn.lock().unwrap();
+        dbm::delete_item(&conn, id).map_err(|e| e.to_string())?
+    }
+    .ok_or_else(|| "Item not found".to_string())?;
+
+    if item.r#type == "image" {
+        let app_dir = app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?;
+        let images_dir = dbm::get_images_dir(&app_dir);
+        let path = std::path::PathBuf::from(&item.content);
+        if path.starts_with(&images_dir) && path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    let _ = app_handle.emit("history-item-deleted", id);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn paste_item(
     app_handle: AppHandle,
     state: State<'_, DbState>,

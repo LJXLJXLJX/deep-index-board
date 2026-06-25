@@ -174,6 +174,15 @@ pub fn clear_history(conn: &Connection, favorites_only: bool) -> rusqlite::Resul
     Ok(())
 }
 
+pub fn delete_item(conn: &Connection, id: i64) -> rusqlite::Result<Option<HistoryItem>> {
+    let item = get_item_by_id(conn, id)?;
+    if item.is_some() {
+        conn.execute("DELETE FROM clipboard_vec WHERE id = ?1", [id])?;
+        conn.execute("DELETE FROM clipboard WHERE id = ?1", [id])?;
+    }
+    Ok(item)
+}
+
 #[allow(dead_code)]
 pub fn get_id_by_hash(conn: &Connection, hash: &str) -> rusqlite::Result<Option<i64>> {
     conn.query_row(

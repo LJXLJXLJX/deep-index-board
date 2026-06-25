@@ -439,6 +439,32 @@ button {
   background-color: #ececec;
 }
 
+.history-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.history-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .item-content {
   font-size: 14px;
   color: #333;
@@ -485,6 +511,10 @@ button {
   margin-left: auto;
 }
 
+.history-item-side .item-meta {
+  margin-left: 0;
+}
+
 .favorite-button {
   flex-shrink: 0;
   display: flex;
@@ -503,7 +533,26 @@ button {
   transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
+.delete-item-button {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #9a9a9a;
+  font-size: 16px;
+  line-height: 1;
+  box-shadow: none;
+  opacity: 0;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
 .history-item:hover .favorite-button,
+.history-item:hover .delete-item-button,
 .favorite-button.active {
   opacity: 1;
 }
@@ -517,18 +566,9 @@ button {
   color: #b7791f;
 }
 
-.item-image-wrapper > .favorite-button {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 4;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(4px);
-}
-
-.item-image-wrapper > .favorite-button:hover,
-.item-image-wrapper > .favorite-button.active {
-  background: rgba(255, 255, 255, 0.95);
+.delete-item-button:hover {
+  background: rgba(180, 35, 24, 0.08);
+  color: #b42318;
 }
 
 .item-source-tag {

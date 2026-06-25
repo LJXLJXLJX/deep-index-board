@@ -204,10 +204,18 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
       onClear();
     });
 
+    const unlistenDeleted = listen<number>("history-item-deleted", (event) => {
+      const deletedId = event.payload;
+      setFavoriteItems((prev) => prev.filter((item) => item.id !== deletedId));
+      setHistoryItems((prev) => prev.filter((item) => item.id !== deletedId));
+      onHover(null);
+    });
+
     return () => {
       unlistenClipboard.then((f) => f());
       unlistenUpdate.then((f) => f());
       unlistenClear.then((f) => f());
+      unlistenDeleted.then((f) => f());
     };
   }, [query, itemMatchesQuery, loadInitial, onClear, onHover]);
 
@@ -308,6 +316,19 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
     }
   };
 
+  const handleDeleteItem = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    item: HistoryItem
+  ) => {
+    event.stopPropagation();
+
+    try {
+      await invoke("delete_item", { id: item.id });
+    } catch (error) {
+      console.error("Failed to delete item:", error);
+    }
+  };
+
   const handleFavoritesResizeStart = (
     event: React.MouseEvent<HTMLDivElement>
   ) => {
@@ -343,6 +364,33 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
     </button>
   );
 
+  const renderDeleteButton = (item: HistoryItem) => (
+    <button
+      className="delete-item-button"
+      onClick={(event) => handleDeleteItem(event, item)}
+      title="删除此条目"
+      aria-label="删除此条目"
+    >
+      ×
+    </button>
+  );
+
+  const renderItemActions = (item: HistoryItem) => (
+    <div className="item-actions">
+      {renderFavoriteButton(item)}
+      {renderDeleteButton(item)}
+    </div>
+  );
+
+  const renderItemMeta = (item: HistoryItem) => (
+    <div className="item-meta">
+      {item.source_app && (
+        <span className="item-source-tag">{getAppName(item.source_app)}</span>
+      )}
+      <span className="item-time-hint">{formatTime(item.timestamp)}</span>
+    </div>
+  );
+
   const renderItem = (_index: number, item: HistoryItem) => (
     <div
       className="history-item"
@@ -350,78 +398,52 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
       onMouseEnter={() => onHover(item)}
       style={{ cursor: "pointer" }}
     >
-      {item.type === "text" ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            width: "100%",
-            gap: "8px",
-          }}
-        >
-          <span className="item-content" style={{ flex: 1 }}>
-            {item.content}
-          </span>
-          {renderFavoriteButton(item)}
-          <div className="item-meta">
-            {item.source_app && (
-              <span className="item-source-tag">
-                {getAppName(item.source_app)}
+      <div className="history-item-row">
+        <div className="history-item-main">
+          {item.type === "text" ? (
+            <span className="item-content" style={{ flex: 1 }}>
+              {item.content}
+            </span>
+          ) : item.type === "image" ||
+            (item.type === "file" && isImageFile(item.content)) ? (
+            <div className="item-image-wrapper">
+              {item.type === "file" && (
+                <span className="file-type-overlay-icon">📄</span>
+              )}
+              <img
+                src={convertFileSrc(item.content)}
+                alt="clipboard content"
+                className="item-image"
+                loading="lazy"
+              />
+              {item.type === "file" && (
+                <span className="file-name-overlay">
+                  {getFileName(item.content)}
+                </span>
+              )}
+              {item.has_vec && (
+                <div
+                  className="item-vector-indicator"
+                  title="已生成向量，支持语义搜索"
+                >
+                  <span className="vector-icon">✨</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="item-file-wrapper">
+              <span className="file-icon">
+                {item.type === "directory" ? "📁" : "📄"}
               </span>
-            )}
-            <span className="item-time-hint">{formatTime(item.timestamp)}</span>
-          </div>
-        </div>
-      ) : item.type === "image" ||
-        (item.type === "file" && isImageFile(item.content)) ? (
-        <div className="item-image-wrapper">
-          {renderFavoriteButton(item)}
-          {item.type === "file" && (
-            <span className="file-type-overlay-icon">📄</span>
-          )}
-          <img
-            src={convertFileSrc(item.content)}
-            alt="clipboard content"
-            className="item-image"
-            loading="lazy"
-          />
-          <div className="item-image-meta">
-            {item.source_app && (
-              <span className="item-source-tag">
-                {getAppName(item.source_app)}
-              </span>
-            )}
-            <span className="item-time-hint">{formatTime(item.timestamp)}</span>
-          </div>
-          {item.type === "file" && (
-            <span className="file-name-overlay">{getFileName(item.content)}</span>
-          )}
-          {item.has_vec && (
-            <div
-              className="item-vector-indicator"
-              title="已生成向量，支持语义搜索"
-            >
-              <span className="vector-icon">✨</span>
+              <span className="file-name">{getFileName(item.content)}</span>
             </div>
           )}
         </div>
-      ) : (
-        <div className="item-file-wrapper">
-          <span className="file-icon">
-            {item.type === "directory" ? "📁" : "📄"}
-          </span>
-          <span className="file-name">{getFileName(item.content)}</span>
-          {renderFavoriteButton(item)}
-          <div className="item-meta">
-            {item.source_app && (
-              <span className="item-source-tag">
-                {getAppName(item.source_app)}
-              </span>
-            )}
-            <span className="item-time-hint">{formatTime(item.timestamp)}</span>
-          </div>
+        <div className="history-item-side">
+          {renderItemActions(item)}
+          {renderItemMeta(item)}
         </div>
-      )}
+      </div>
     </div>
   );
 

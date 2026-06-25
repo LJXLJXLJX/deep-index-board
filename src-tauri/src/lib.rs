@@ -51,7 +51,8 @@ pub fn run() {
             commands::set_favorite,
             commands::unfavorite_all,
             commands::save_text_item_copy,
-            commands::overwrite_text_item
+            commands::overwrite_text_item,
+            commands::delete_item
         ])
         .setup(|app| {
             // 1. 数据库初始化
