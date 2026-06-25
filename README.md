@@ -1,30 +1,54 @@
 # Deep Index Board
 
-Deep Index Board 是一个面向日常使用的剪贴板历史工具。它会在后台记录你复制过的内容，并提供快速唤醒、预览、搜索和再次粘贴能力。
+English | [简体中文](README.zh-CN.md)
 
-## 已实现功能
+Deep Index Board is a clipboard history tool for everyday use. It records copied content in the background and provides quick access, preview, search, favorites, text editing, and paste-again workflows.
 
-- 自动记录文本、图片、文件和文件夹剪贴板内容
-- 快捷键唤醒剪贴板面板，点击历史项即可粘贴
-- 支持关键词搜索历史内容
-- 支持语义搜索，用文字描述查找历史图片
-- 图片内容自动保存，并支持预览
-- 图片和图片文件支持 OCR 文本提取
-- 文本文件可显示内容快照
-- 支持清空所有剪贴板记录，并删除已保存的图片文件
-- 支持调整窗口大小、拖动窗口位置
-- 支持开机自启动开关
-- 底部显示当前内存占用
+## Features
 
-## 使用方式
+### Clipboard History
 
-启动后应用会在后台监听剪贴板。
+- Automatically records copied text, images, files, and folders
+- Opens the clipboard panel with a global shortcut, then pastes by clicking a history item
+- Supports deleting individual history items
+- Supports clearing non-favorited history items and removing images saved by the app
 
-- Windows：按 `Alt + V` 打开面板
-- macOS：按 `Control + V` 打开面板
+### Favorites
 
-在面板中可以搜索、预览、选择历史内容，也可以清空全部记录。
+- Supports adding history items to favorites
+- Keeps the favorites section fixed above the regular history list and collapsed by default
+- Supports manually expanding/collapsing the favorites section and resizing it by dragging the divider
+- Supports unfavoriting all items at once
+
+### Search and Preview
+
+- Supports keyword search across history
+- Supports semantic search for images using natural-language descriptions
+- Saves image content automatically and supports image preview
+- Supports OCR text extraction for images and image files
+- Shows content snapshots for text files
+
+### Text Editing
+
+- Text items can explicitly enter edit mode in the right-side preview pane
+- Edited content must be manually saved as a new item or used to overwrite the current item
+- Draft edits do not automatically modify the original history item
+
+### App Experience
+
+- Supports resizing the window and dragging the window position
+- Supports toggling launch at startup
+- Shows current memory usage in the status bar
+
+## Usage
+
+After launch, the app listens to clipboard changes in the background.
+
+- Windows: press `Alt + V` to open the panel
+- macOS: press `Control + V` to open the panel
+
+In the panel, you can search, preview, favorite, edit, delete, and select clipboard history items. The top-level clear action removes non-favorited history items while keeping the favorites section intact.
 
 ## License
 
-MIT License. 可以自由使用、修改和分发，但需要保留版权和许可声明。
+MIT License. You may use, modify, and distribute this project freely, as long as the copyright and license notice are preserved.
