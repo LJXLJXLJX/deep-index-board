@@ -247,7 +247,7 @@ fn process_clipboard<R: Runtime>(app_handle: &AppHandle<R>, clipboard: &mut Clip
                         eprintln!("Failed to save file path: {}", e);
                     } else {
                         // 无论哪种文件，尝试获取最新的历史记录项以更新 content_text
-                        if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
+                        if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None, None) {
                             if let Some(item) = items.first() {
                                 if item.content_text.is_none() {
                                     if is_image_file(path) {
@@ -271,7 +271,7 @@ fn process_clipboard<R: Runtime>(app_handle: &AppHandle<R>, clipboard: &mut Clip
             }
 
             if captured_files {
-                if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
+                if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None, None) {
                     if let Some(item) = items.first() {
                         let _ = app_handle.emit("clipboard-updated", item);
                     }
@@ -288,7 +288,7 @@ fn process_clipboard<R: Runtime>(app_handle: &AppHandle<R>, clipboard: &mut Clip
             let source_app = crate::platform::get_frontmost_app();
             if let Err(e) = upsert_item(&conn, &text, "text", &hash, 0, source_app.as_deref()) {
                 eprintln!("Failed to save clipboard text: {}", e);
-            } else if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None) {
+            } else if let Ok(items) = crate::dbm::get_history(&conn, None, 1, None, None) {
                 if let Some(item) = items.first() {
                     let _ = app_handle.emit("clipboard-updated", item);
                 }
@@ -359,7 +359,7 @@ fn process_image_data<R: Runtime>(
             source_app.as_deref(),
         ) {
             eprintln!("Failed to update duplicate image timestamp: {}", e);
-        } else if let Ok(items) = crate::dbm::get_history(conn, None, 1, None) {
+        } else if let Ok(items) = crate::dbm::get_history(conn, None, 1, None, None) {
             if let Some(item) = items.first() {
                 let item_to_emit = item.clone();
                 let _ = app_handle.emit("clipboard-updated", &item_to_emit);
@@ -397,7 +397,7 @@ fn process_image_data<R: Runtime>(
                 source_app.as_deref(),
             ) {
                 eprintln!("Failed to save image path to DB: {}", e);
-            } else if let Ok(items) = crate::dbm::get_history(conn, None, 1, None) {
+            } else if let Ok(items) = crate::dbm::get_history(conn, None, 1, None, None) {
                 if let Some(item) = items.first() {
                     let item_to_emit = item.clone();
                     let _ = app_handle.emit("clipboard-updated", &item_to_emit);

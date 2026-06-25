@@ -6,11 +6,13 @@ CREATE TABLE IF NOT EXISTS clipboard (
     content_text TEXT,       -- 提取的文本内容（用于搜索：OCR文字、文件提取的正文等）
     mtime INTEGER DEFAULT 0, -- 文件修改时间戳
     source_app TEXT,         -- 来源应用（如 com.apple.Safari）
+    is_favorite INTEGER NOT NULL DEFAULT 0, -- 是否收藏
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_clipboard_hash ON clipboard(content_hash);
 CREATE INDEX IF NOT EXISTS idx_clipboard_timestamp ON clipboard(timestamp);
+CREATE INDEX IF NOT EXISTS idx_clipboard_favorite_timestamp ON clipboard(is_favorite, timestamp);
 
 -- FTS5 Virtual Table for optimized searching
 CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_fts USING fts5(

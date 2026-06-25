@@ -16,16 +16,27 @@ pub fn get_history(
     last_timestamp: Option<String>,
     limit: usize,
     query: Option<String>,
+    favorites_only: bool,
 ) -> Result<Vec<HistoryItem>, String> {
     let conn = state.conn.lock().unwrap();
-    dbm::get_history(&conn, last_timestamp, limit, query).map_err(|e| e.to_string())
+    dbm::get_history(&conn, last_timestamp, limit, query, Some(favorites_only))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn clear_history(app_handle: AppHandle, state: State<DbState>) -> Result<(), String> {
+pub fn clear_history(
+    app_handle: AppHandle,
+    state: State<DbState>,
+    favorites_only: bool,
+) -> Result<(), String> {
+    let image_paths = {
+        let conn = state.conn.lock().unwrap();
+        dbm::get_clearable_image_paths(&conn, favorites_only).map_err(|e| e.to_string())?
+    };
+
     {
         let conn = state.conn.lock().unwrap();
-        dbm::clear_all_history(&conn).map_err(|e| e.to_string())?;
+        dbm::clear_history(&conn, favorites_only).map_err(|e| e.to_string())?;
     }
 
     let app_dir = app_handle
@@ -33,10 +44,12 @@ pub fn clear_history(app_handle: AppHandle, state: State<DbState>) -> Result<(),
         .app_data_dir()
         .map_err(|e| e.to_string())?;
     let images_dir = dbm::get_images_dir(&app_dir);
-    if images_dir.exists() {
-        std::fs::remove_dir_all(&images_dir).map_err(|e| e.to_string())?;
+    for image_path in image_paths {
+        let path = std::path::PathBuf::from(image_path);
+        if path.starts_with(&images_dir) && path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
     }
-    std::fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
 
     let _ = app_handle.emit("history-cleared", ());
     Ok(())
@@ -71,6 +84,7 @@ pub async fn get_history_semantic(
     task_state: State<'_, crate::task_manager::HeavyWorkState>,
     query: String,
     limit: usize,
+    favorites_only: bool,
 ) -> Result<Vec<HistoryItem>, String> {
     if query.trim().is_empty() {
         return Ok(Vec::new());
@@ -114,7 +128,31 @@ pub async fn get_history_semantic(
 
     // 3. 数据库检索
     let conn = db_state.conn.lock().unwrap();
-    dbm::get_history_semantic(&conn, &embedding, limit).map_err(|e| e.to_string())
+    dbm::get_history_semantic(&conn, &embedding, limit, Some(favorites_only))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_favorite(
+    app_handle: AppHandle,
+    state: State<DbState>,
+    id: i64,
+    is_favorite: bool,
+) -> Result<HistoryItem, String> {
+    let item = {
+        let conn = state.conn.lock().unwrap();
+        dbm::set_favorite(&conn, id, is_favorite).map_err(|e| e.to_string())?
+    }
+    .ok_or_else(|| "Item not found".to_string())?;
+
+    let _ = app_handle.emit("history-item-updated", &item);
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn unfavorite_all(state: State<DbState>) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    dbm::unfavorite_all(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -115,9 +115,27 @@ pub fn clear_content_text(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn clear_all_history(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute("DELETE FROM clipboard_vec", [])?;
-    conn.execute("DELETE FROM clipboard", [])?;
+pub fn get_clearable_image_paths(
+    conn: &Connection,
+    favorites_only: bool,
+) -> rusqlite::Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT content FROM clipboard WHERE is_favorite = ?1 AND type = 'image'")?;
+    let favorite_value = if favorites_only { 1_i64 } else { 0_i64 };
+    let rows = stmt.query_map([favorite_value], |row| row.get(0))?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+pub fn clear_history(conn: &Connection, favorites_only: bool) -> rusqlite::Result<()> {
+    let favorite_value = if favorites_only { 1_i64 } else { 0_i64 };
+    conn.execute(
+        "DELETE FROM clipboard_vec WHERE id IN (SELECT id FROM clipboard WHERE is_favorite = ?1)",
+        [favorite_value],
+    )?;
+    conn.execute(
+        "DELETE FROM clipboard WHERE is_favorite = ?1",
+        [favorite_value],
+    )?;
     Ok(())
 }
 
@@ -136,7 +154,7 @@ pub fn get_item_by_hash(conn: &Connection, hash: &str) -> rusqlite::Result<Optio
     conn.query_row(
         "SELECT id, content, type, content_text, timestamp, 
          (SELECT 1 FROM clipboard_vec WHERE id = clipboard.id) as has_vec,
-         mtime, source_app
+         mtime, source_app, is_favorite
          FROM clipboard WHERE content_hash = ?1",
         [hash],
         |row| {
@@ -149,6 +167,7 @@ pub fn get_item_by_hash(conn: &Connection, hash: &str) -> rusqlite::Result<Optio
                 has_vec: row.get::<_, Option<i32>>(5)?.is_some(),
                 mtime: row.get(6)?,
                 source_app: row.get(7)?,
+                is_favorite: row.get::<_, i32>(8)? == 1,
             })
         },
     )
@@ -174,6 +193,7 @@ pub struct HistoryItem {
     pub has_vec: bool,
     pub mtime: i64,
     pub source_app: Option<String>,
+    pub is_favorite: bool,
 }
 
 pub fn get_history(
@@ -181,13 +201,19 @@ pub fn get_history(
     last_timestamp: Option<String>,
     limit: usize,
     query: Option<String>,
+    favorite_filter: Option<bool>,
 ) -> rusqlite::Result<Vec<HistoryItem>> {
     let mut sql = "SELECT id, content, type, content_text, timestamp,
          (SELECT 1 FROM clipboard_vec WHERE id = clipboard.id) as has_vec,
-         mtime, source_app
+         mtime, source_app, is_favorite
          FROM clipboard WHERE 1=1"
         .to_string();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(is_favorite) = favorite_filter {
+        sql.push_str(" AND is_favorite = ?");
+        params.push(Box::new(if is_favorite { 1_i64 } else { 0_i64 }));
+    }
 
     if let Some(ref q) = query {
         if !q.is_empty() {
@@ -231,6 +257,7 @@ pub fn get_history(
             has_vec: row.get::<_, Option<i32>>(5)?.is_some(),
             mtime: row.get(6)?,
             source_app: row.get(7)?,
+            is_favorite: row.get::<_, i32>(8)? == 1,
         })
     })?;
 
@@ -241,6 +268,7 @@ pub fn get_history_semantic(
     conn: &Connection,
     embedding: &[f32],
     limit: usize,
+    favorite_filter: Option<bool>,
 ) -> rusqlite::Result<Vec<HistoryItem>> {
     // 1. 将 f32 向量转换为字节，以便 sqlite-vec 处理
     let embedding_blob = unsafe {
@@ -253,16 +281,28 @@ pub fn get_history_semantic(
     // 2. 向量检索：使用 KNN 查询
     // 我们将 clipboard_vec 和 clipboard JOIN 起来，获取完整信息
     // sqlite-vec 的 MATCH 返回结果默认按距离排序 (距离越小越相似)
-    let sql = "SELECT 
-            c.id, c.content, c.type, c.content_text, c.timestamp, 
-            1 as has_vec, c.mtime, c.source_app, v.distance
+    let mut sql = "SELECT
+            c.id, c.content, c.type, c.content_text, c.timestamp,
+            1 as has_vec, c.mtime, c.source_app, c.is_favorite, v.distance
          FROM clipboard c
          JOIN clipboard_vec v ON c.id = v.id
-         WHERE v.embedding MATCH ?1 AND v.k = ?2
-         ORDER BY v.distance ASC";
+         WHERE v.embedding MATCH ?1 AND v.k = ?2"
+        .to_string();
 
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map(rusqlite::params![embedding_blob, limit as i64], |row| {
+    let favorite_value = favorite_filter.map(|is_favorite| if is_favorite { 1_i64 } else { 0_i64 });
+    if favorite_value.is_some() {
+        sql.push_str(" AND c.is_favorite = ?3");
+    }
+    sql.push_str(" ORDER BY v.distance ASC");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+        vec![Box::new(embedding_blob), Box::new(limit as i64)];
+    if let Some(value) = favorite_value {
+        params.push(Box::new(value));
+    }
+
+    let rows = stmt.query_map(rusqlite::params_from_iter(params), |row| {
         Ok(HistoryItem {
             id: row.get(0)?,
             content: row.get(1)?,
@@ -272,6 +312,7 @@ pub fn get_history_semantic(
             has_vec: row.get::<_, i32>(5)? == 1,
             mtime: row.get(6)?,
             source_app: row.get(7)?,
+            is_favorite: row.get::<_, i32>(8)? == 1,
         })
     })?;
 
@@ -289,7 +330,7 @@ pub fn get_item_by_id_with_conn(
     conn.query_row(
         "SELECT id, content, type, content_text, timestamp,
          (SELECT 1 FROM clipboard_vec WHERE id = clipboard.id) as has_vec,
-         mtime, source_app
+         mtime, source_app, is_favorite
          FROM clipboard WHERE id = ?1",
         [id],
         |row| {
@@ -302,10 +343,28 @@ pub fn get_item_by_id_with_conn(
                 has_vec: row.get::<_, Option<i32>>(5)?.is_some(),
                 mtime: row.get(6)?,
                 source_app: row.get(7)?,
+                is_favorite: row.get::<_, i32>(8)? == 1,
             })
         },
     )
     .optional()
+}
+
+pub fn set_favorite(
+    conn: &Connection,
+    id: i64,
+    is_favorite: bool,
+) -> rusqlite::Result<Option<HistoryItem>> {
+    conn.execute(
+        "UPDATE clipboard SET is_favorite = ?1 WHERE id = ?2",
+        rusqlite::params![if is_favorite { 1_i64 } else { 0_i64 }, id],
+    )?;
+    get_item_by_id(conn, id)
+}
+
+pub fn unfavorite_all(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute("UPDATE clipboard SET is_favorite = 0 WHERE is_favorite = 1", [])?;
+    Ok(())
 }
 
 pub fn get_images_dir(app_dir: &std::path::Path) -> std::path::PathBuf {

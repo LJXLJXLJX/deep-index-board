@@ -47,7 +47,9 @@ pub fn run() {
             commands::get_inference_report,
             commands::release_inference_session,
             commands::release_all_inference,
-            commands::get_history_semantic
+            commands::get_history_semantic,
+            commands::set_favorite,
+            commands::unfavorite_all
         ])
         .setup(|app| {
             // 1. 数据库初始化

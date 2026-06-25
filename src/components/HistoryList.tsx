@@ -13,6 +13,7 @@ export interface HistoryItem {
   has_vec: boolean;
   mtime: number;
   source_app?: string;
+  is_favorite: boolean;
 }
 
 interface HistoryListProps {
@@ -80,52 +81,125 @@ const formatTime = (ts: string) => {
 };
 
 export function HistoryList({ onHover, onClear }: HistoryListProps) {
-  const [items, setItems] = useState<HistoryItem[]>([]);
-  const [hasMore, setHasMore] = useState(true);
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [favoriteItems, setFavoriteItems] = useState<HistoryItem[]>([]);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [hasMoreFavorites, setHasMoreFavorites] = useState(true);
   const [query, setQuery] = useState("");
   const [isSemantic, setIsSemantic] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [favoritesExpanded, setFavoritesExpanded] = useState(false);
+  const [favoritesHeight, setFavoritesHeight] = useState(160);
+
+  const itemMatchesQuery = useCallback((item: HistoryItem, searchQuery: string) => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed || isSemantic) return true;
+    return (
+      item.content.includes(trimmed) ||
+      (item.content_text?.includes(trimmed) ?? false)
+    );
+  }, [isSemantic]);
+
+  const fetchItems = useCallback(
+    async (
+      favoritesOnly: boolean,
+      lastTimestamp: string | null,
+      searchQuery: string
+    ) => {
+      if (isSemantic && searchQuery.trim()) {
+        if (lastTimestamp !== null) return [];
+        return invoke<HistoryItem[]>("get_history_semantic", {
+          query: searchQuery,
+          limit: 50,
+          favoritesOnly,
+        });
+      }
+
+      return invoke<HistoryItem[]>("get_history", {
+        lastTimestamp,
+        limit: 50,
+        query: searchQuery || null,
+        favoritesOnly,
+      });
+    },
+    [isSemantic]
+  );
+
+  const loadInitial = useCallback(
+    async (searchQuery: string) => {
+      const semanticSearching = isSemantic && searchQuery.trim();
+      try {
+        if (semanticSearching) setIsSearching(true);
+        const [favorites, history] = await Promise.all([
+          fetchItems(true, null, searchQuery),
+          fetchItems(false, null, searchQuery),
+        ]);
+
+        setFavoriteItems(favorites);
+        setHistoryItems(history);
+        setHasMoreFavorites(!semanticSearching && favorites.length >= 50);
+        setHasMoreHistory(!semanticSearching && history.length >= 50);
+      } catch (error) {
+        console.error("Failed to load history:", error);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [fetchItems, isSemantic]
+  );
 
   // 初始加载及监听更新
   useEffect(() => {
-    // 加载第一页
-    loadMore(null, query);
+    loadInitial(query);
 
-    // 监听 backend 发来的新剪贴板事件
+    const applyItemUpdate = (updatedItem: HistoryItem, expandFavorite: boolean) => {
+      if (!itemMatchesQuery(updatedItem, query)) {
+        setFavoriteItems((prev) =>
+          prev.filter((item) => item.id !== updatedItem.id)
+        );
+        setHistoryItems((prev) =>
+          prev.filter((item) => item.id !== updatedItem.id)
+        );
+        return;
+      }
+
+      if (updatedItem.is_favorite) {
+        if (expandFavorite) setFavoritesExpanded(true);
+        setFavoriteItems((prev) => {
+          const filtered = prev.filter((item) => item.id !== updatedItem.id);
+          return [updatedItem, ...filtered];
+        });
+        setHistoryItems((prev) =>
+          prev.filter((item) => item.id !== updatedItem.id)
+        );
+        return;
+      }
+
+      setFavoriteItems((prev) =>
+        prev.filter((item) => item.id !== updatedItem.id)
+      );
+      setHistoryItems((prev) => {
+        const filtered = prev.filter((item) => item.id !== updatedItem.id);
+        return [updatedItem, ...filtered];
+      });
+    };
+
     const unlistenClipboard = listen<HistoryItem>(
       "clipboard-updated",
       (event) => {
-        const newItem = event.payload;
-
-        if (
-          query &&
-          newItem.type === "text" &&
-          !newItem.content.includes(query)
-        ) {
-          return;
-        }
-
-        setItems((prev) => {
-          const filtered = prev.filter((i) => i.id !== newItem.id);
-          return [newItem, ...filtered];
-        });
+        applyItemUpdate(event.payload, event.payload.is_favorite);
       }
     );
 
-    // 监听任务完成后的异步更新（如 OCR 结果）
     const unlistenUpdate = listen<HistoryItem>(
       "history-item-updated",
       (event) => {
-        const updatedItem = event.payload;
-        setItems((prev) =>
-          prev.map((item) => (item.id === updatedItem.id ? updatedItem : item))
-        );
+        applyItemUpdate(event.payload, event.payload.is_favorite);
       }
     );
 
     const unlistenClear = listen("history-cleared", () => {
-      setItems([]);
-      setHasMore(false);
+      loadInitial(query);
       onHover(null);
       onClear();
     });
@@ -135,62 +209,41 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
       unlistenUpdate.then((f) => f());
       unlistenClear.then((f) => f());
     };
-  }, [query, isSemantic, onClear, onHover]); // 当 query 或 isSemantic 改变时重新加载
+  }, [query, itemMatchesQuery, loadInitial, onClear, onHover]);
 
-  const loadMore = useCallback(
-    async (lastTimestamp: string | null, searchQuery: string) => {
-      if (isSearching) return;
+  const loadMoreHistory = useCallback(async () => {
+    if (!hasMoreHistory || historyItems.length === 0 || isSearching) return;
+    const lastItem = historyItems[historyItems.length - 1];
 
-      try {
-        if (isSemantic) {
-          // 语义搜索目前不分页，直接取 Top 50
-          if (lastTimestamp !== null) return;
-          if (!searchQuery.trim()) {
-            setItems([]);
-            return;
-          }
+    try {
+      const batch = await fetchItems(false, lastItem.timestamp, query);
+      setHasMoreHistory(batch.length >= 50);
+      setHistoryItems((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id));
+        const uniqueNew = batch.filter((item) => !existingIds.has(item.id));
+        return [...prev, ...uniqueNew];
+      });
+    } catch (error) {
+      console.error("Failed to load more history:", error);
+    }
+  }, [fetchItems, hasMoreHistory, historyItems, isSearching, query]);
 
-          setIsSearching(true);
-          const results: HistoryItem[] = await invoke("get_history_semantic", {
-            query: searchQuery,
-            limit: 50,
-          });
-          setItems(results);
-          setHasMore(false);
-          setIsSearching(false);
-        } else {
-          const batch: HistoryItem[] = await invoke("get_history", {
-            lastTimestamp,
-            limit: 50,
-            query: searchQuery || null,
-          });
+  const loadMoreFavorites = useCallback(async () => {
+    if (!hasMoreFavorites || favoriteItems.length === 0 || isSearching) return;
+    const lastItem = favoriteItems[favoriteItems.length - 1];
 
-          if (batch.length < 50) {
-            setHasMore(false);
-          } else {
-            setHasMore(true);
-          }
-
-          setItems((prev) => {
-            if (lastTimestamp === null) return batch;
-            const existingIds = new Set(prev.map((i) => i.id));
-            const uniqueNew = batch.filter((i) => !existingIds.has(i.id));
-            return [...prev, ...uniqueNew];
-          });
-        }
-      } catch (error) {
-        console.error("Failed to load history:", error);
-        setIsSearching(false);
-      }
-    },
-    [isSemantic, isSearching]
-  );
-
-  const handleEndReached = () => {
-    if (!hasMore || items.length === 0) return;
-    const lastItem = items[items.length - 1];
-    loadMore(lastItem.timestamp, query);
-  };
+    try {
+      const batch = await fetchItems(true, lastItem.timestamp, query);
+      setHasMoreFavorites(batch.length >= 50);
+      setFavoriteItems((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id));
+        const uniqueNew = batch.filter((item) => !existingIds.has(item.id));
+        return [...prev, ...uniqueNew];
+      });
+    } catch (error) {
+      console.error("Failed to load more favorites:", error);
+    }
+  }, [favoriteItems, fetchItems, hasMoreFavorites, isSearching, query]);
 
   const handleItemClick = async (item: HistoryItem) => {
     try {
@@ -202,15 +255,175 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
 
   const handleClearHistory = async () => {
     try {
-      await invoke("clear_history");
-      setItems([]);
-      setHasMore(false);
-      onHover(null);
-      onClear();
+      await invoke("clear_history", { favoritesOnly: false });
     } catch (error) {
       console.error("Failed to clear history:", error);
     }
   };
+
+  const handleFavoriteToggle = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    item: HistoryItem
+  ) => {
+    event.stopPropagation();
+
+    try {
+      const updatedItem: HistoryItem = await invoke("set_favorite", {
+        id: item.id,
+        isFavorite: !item.is_favorite,
+      });
+
+      if (updatedItem.is_favorite) {
+        setFavoritesExpanded(true);
+        setFavoriteItems((prev) => {
+          const filtered = prev.filter((current) => current.id !== updatedItem.id);
+          return [updatedItem, ...filtered];
+        });
+        setHistoryItems((prev) =>
+          prev.filter((current) => current.id !== updatedItem.id)
+        );
+      } else {
+        setFavoriteItems((prev) =>
+          prev.filter((current) => current.id !== updatedItem.id)
+        );
+        setHistoryItems((prev) => [updatedItem, ...prev]);
+      }
+    } catch (error) {
+      console.error("Failed to toggle favorite:", error);
+    }
+  };
+
+  const handleUnfavoriteAll = async (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.stopPropagation();
+    if (favoriteItems.length === 0) return;
+
+    try {
+      await invoke("unfavorite_all");
+      await loadInitial(query);
+      setFavoritesExpanded(false);
+    } catch (error) {
+      console.error("Failed to unfavorite all:", error);
+    }
+  };
+
+  const handleFavoritesResizeStart = (
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = favoritesHeight;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const nextHeight = Math.min(
+        360,
+        Math.max(90, startHeight + moveEvent.clientY - startY)
+      );
+      setFavoritesHeight(nextHeight);
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const renderFavoriteButton = (item: HistoryItem) => (
+    <button
+      className={`favorite-button ${item.is_favorite ? "active" : ""}`}
+      onClick={(event) => handleFavoriteToggle(event, item)}
+      title={item.is_favorite ? "取消收藏" : "加入收藏"}
+      aria-label={item.is_favorite ? "取消收藏" : "加入收藏"}
+    >
+      {item.is_favorite ? "★" : "☆"}
+    </button>
+  );
+
+  const renderItem = (_index: number, item: HistoryItem) => (
+    <div
+      className="history-item"
+      onClick={() => handleItemClick(item)}
+      onMouseEnter={() => onHover(item)}
+      style={{ cursor: "pointer" }}
+    >
+      {item.type === "text" ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            width: "100%",
+            gap: "8px",
+          }}
+        >
+          <span className="item-content" style={{ flex: 1 }}>
+            {item.content}
+          </span>
+          {renderFavoriteButton(item)}
+          <div className="item-meta">
+            {item.source_app && (
+              <span className="item-source-tag">
+                {getAppName(item.source_app)}
+              </span>
+            )}
+            <span className="item-time-hint">{formatTime(item.timestamp)}</span>
+          </div>
+        </div>
+      ) : item.type === "image" ||
+        (item.type === "file" && isImageFile(item.content)) ? (
+        <div className="item-image-wrapper">
+          {renderFavoriteButton(item)}
+          {item.type === "file" && (
+            <span className="file-type-overlay-icon">📄</span>
+          )}
+          <img
+            src={convertFileSrc(item.content)}
+            alt="clipboard content"
+            className="item-image"
+            loading="lazy"
+          />
+          <div className="item-image-meta">
+            {item.source_app && (
+              <span className="item-source-tag">
+                {getAppName(item.source_app)}
+              </span>
+            )}
+            <span className="item-time-hint">{formatTime(item.timestamp)}</span>
+          </div>
+          {item.type === "file" && (
+            <span className="file-name-overlay">{getFileName(item.content)}</span>
+          )}
+          {item.has_vec && (
+            <div
+              className="item-vector-indicator"
+              title="已生成向量，支持语义搜索"
+            >
+              <span className="vector-icon">✨</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="item-file-wrapper">
+          <span className="file-icon">
+            {item.type === "directory" ? "📁" : "📄"}
+          </span>
+          <span className="file-name">{getFileName(item.content)}</span>
+          {renderFavoriteButton(item)}
+          <div className="item-meta">
+            {item.source_app && (
+              <span className="item-source-tag">
+                {getAppName(item.source_app)}
+              </span>
+            )}
+            <span className="item-time-hint">{formatTime(item.timestamp)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -238,8 +451,8 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
           <button
             className="clear-history-button"
             onClick={handleClearHistory}
-            title="删除所有剪贴板记录和已保存的图片文件"
-            disabled={items.length === 0}
+            title="删除未收藏的剪贴板记录和对应图片文件"
+            disabled={historyItems.length === 0}
           >
             清空
           </button>
@@ -248,99 +461,68 @@ export function HistoryList({ onHover, onClear }: HistoryListProps) {
           <div className="searching-indicator">AI 正在匹配中...</div>
         )}
       </div>
-      <div className="history-list" style={{ flex: 1, overflow: "hidden" }}>
-        <Virtuoso
-          style={{ height: "100%" }}
-          data={items}
-          endReached={handleEndReached}
-          increaseViewportBy={200}
-          itemContent={(_index, item) => (
-            <div
-              className="history-item"
-              onClick={() => handleItemClick(item)}
-              onMouseEnter={() => onHover(item)}
-              style={{ cursor: "pointer" }}
+      <div className="history-content">
+        <section
+          className={`favorites-section ${
+            favoritesExpanded ? "expanded" : "collapsed"
+          }`}
+          style={favoritesExpanded ? { height: `${favoritesHeight}px` } : undefined}
+        >
+          <div className="favorites-header">
+            <button
+              className="favorites-toggle-button"
+              onClick={() => setFavoritesExpanded((expanded) => !expanded)}
+              aria-expanded={favoritesExpanded}
             >
-              {item.type === "text" ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    width: "100%",
-                    gap: "8px",
-                  }}
-                >
-                  <span className="item-content" style={{ flex: 1 }}>
-                    {item.content}
-                  </span>
-                  <div className="item-meta">
-                    {item.source_app && (
-                      <span className="item-source-tag">
-                        {getAppName(item.source_app)}
-                      </span>
-                    )}
-                    <span className="item-time-hint">
-                      {formatTime(item.timestamp)}
-                    </span>
-                  </div>
-                </div>
-              ) : item.type === "image" ||
-                (item.type === "file" && isImageFile(item.content)) ? (
-                <div className="item-image-wrapper">
-                  {item.type === "file" && (
-                    <span className="file-type-overlay-icon">📄</span>
-                  )}
-                  <img
-                    src={convertFileSrc(item.content)}
-                    alt="clipboard content"
-                    className="item-image"
-                    loading="lazy"
-                  />
-                  <div className="item-image-meta">
-                    {item.source_app && (
-                      <span className="item-source-tag">
-                        {getAppName(item.source_app)}
-                      </span>
-                    )}
-                    <span className="item-time-hint">
-                      {formatTime(item.timestamp)}
-                    </span>
-                  </div>
-                  {item.type === "file" && (
-                    <span className="file-name-overlay">
-                      {getFileName(item.content)}
-                    </span>
-                  )}
-                  {item.has_vec && (
-                    <div
-                      className="item-vector-indicator"
-                      title="已生成向量，支持语义搜索"
-                    >
-                      <span className="vector-icon">✨</span>
-                    </div>
-                  )}
-                </div>
+              <span className="favorites-chevron">
+                {favoritesExpanded ? "⌄" : "›"}
+              </span>
+              <span>收藏</span>
+            </button>
+            <button
+              className="favorites-unfavorite-all-button"
+              onClick={handleUnfavoriteAll}
+              disabled={favoriteItems.length === 0}
+              title="全部取消收藏"
+              aria-label="全部取消收藏"
+            >
+              ☆
+            </button>
+            <span className="favorites-count">{favoriteItems.length}</span>
+          </div>
+          {favoritesExpanded && (
+            <div className="favorites-list">
+              {favoriteItems.length > 0 ? (
+                <Virtuoso
+                  style={{ height: "100%" }}
+                  data={favoriteItems}
+                  endReached={loadMoreFavorites}
+                  increaseViewportBy={120}
+                  itemContent={renderItem}
+                />
               ) : (
-                <div className="item-file-wrapper">
-                  <span className="file-icon">
-                    {item.type === "directory" ? "📁" : "📄"}
-                  </span>
-                  <span className="file-name">{getFileName(item.content)}</span>
-                  <div className="item-meta">
-                    {item.source_app && (
-                      <span className="item-source-tag">
-                        {getAppName(item.source_app)}
-                      </span>
-                    )}
-                    <span className="item-time-hint">
-                      {formatTime(item.timestamp)}
-                    </span>
-                  </div>
-                </div>
+                <div className="empty-section-text">暂无收藏</div>
               )}
             </div>
           )}
-        />
+        </section>
+        {favoritesExpanded && (
+          <div
+            className="history-section-resizer"
+            onMouseDown={handleFavoritesResizeStart}
+            role="separator"
+            aria-orientation="horizontal"
+          />
+        )}
+        <div className="history-list">
+          <Virtuoso
+            style={{ height: "100%" }}
+            data={historyItems}
+            endReached={loadMoreHistory}
+            increaseViewportBy={200}
+            itemContent={renderItem}
+          />
+        </div>
       </div>
     </div>
   );
