@@ -1,5 +1,7 @@
 # Deep Index Board
 
+[![CI](https://github.com/LJXLJXLJX/deep-index-board/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LJXLJXLJX/deep-index-board/actions/workflows/ci.yml)
+
 [English](README.md) | 简体中文
 
 面向“粘贴前总要改一下”的剪贴板历史工具。

@@ -1,5 +1,7 @@
 # Deep Index Board
 
+[![CI](https://github.com/LJXLJXLJX/deep-index-board/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LJXLJXLJX/deep-index-board/actions/workflows/ci.yml)
+
 English | [简体中文](README.zh-CN.md)
 
 Clipboard history for people who tweak before they paste.
