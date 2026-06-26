@@ -53,4 +53,6 @@ jobs:
 
       - name: Build Tauri backend
         working-directory: src-tauri
+        env:
+          TAURI_CONFIG: '{"bundle":{"resources":[]}}'
         run: cargo build --locked
