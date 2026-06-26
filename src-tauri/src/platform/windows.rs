@@ -1,6 +1,6 @@
 use arboard::Clipboard;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
-use tauri::{App, AppHandle, Runtime, WebviewWindow};
+use tauri::{App, AppHandle, Manager, Runtime, WebviewWindow};
 
 static QUICK_WINDOW_DISMISS_MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 static QUICK_WINDOW_OUTSIDE_CLICKED: AtomicBool = AtomicBool::new(false);
@@ -106,10 +106,12 @@ pub fn write_file_path_to_clipboard(clipboard: &mut Clipboard, path: &str) -> Re
     clipboard.set_text(path).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 pub fn clipboard_change_count() -> isize {
     0
 }
 
+#[allow(dead_code)]
 pub fn read_clipboard_file_paths() -> Vec<String> {
     Vec::new()
 }
