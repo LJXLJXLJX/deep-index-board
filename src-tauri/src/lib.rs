@@ -94,7 +94,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             let shortcut = Shortcut::from_str("Alt+V").unwrap();
             #[cfg(not(target_os = "windows"))]
-            let shortcut = Shortcut::from_str("Control+V").unwrap();
+            let shortcut = Shortcut::from_str("Command+Shift+V").unwrap();
             app.global_shortcut()
                 .on_shortcut(shortcut, move |app_handle, _shortcut, event| {
                     if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
