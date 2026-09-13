@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- _Nothing yet._
+
+## v0.2.1 - 2026-09-13
+
 - macOS 唤起快捷键由 Control+V 改为 Command+Shift+V。
 
 ## v0.2.0 - 2026-06-25
